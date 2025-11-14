@@ -42,7 +42,8 @@ TOKEN=$(curl -s -X POST "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect
   -d "client_secret=${CLIENT_SECRET}" \
   -d "username=developer" \
   -d "password=developer" \
-  -d "grant_type=password" | jq -r '.access_token')
+  -d "grant_type=password" \
+  -d "scope=openid email profile" | jq -r '.access_token')
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
     echo "❌ Failed to get token"

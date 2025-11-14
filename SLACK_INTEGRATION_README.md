@@ -107,7 +107,8 @@ TOKEN=$(curl -s -X POST "http://localhost:8080/realms/master/protocol/openid-con
   -d "client_secret=<your-secret>" \
   -d "username=developer" \
   -d "password=developer" \
-  -d "grant_type=password" | jq -r '.access_token')
+  -d "grant_type=password" \
+  -d "scope=openid email profile" | jq -r '.access_token')
 
 # List tools
 curl -s http://localhost:3000/slack/tools | jq
