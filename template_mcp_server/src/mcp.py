@@ -9,8 +9,15 @@ from fastmcp import FastMCP
 from template_mcp_server.src.settings import settings
 
 # Import tools from the tools package
+from template_mcp_server.src.tools.backend_query_tool import (
+    query_backend_service,
+)
 from template_mcp_server.src.tools.code_review_tool import (
     generate_code_review_prompt,
+)
+from template_mcp_server.src.tools.list_capabilities import (
+    get_available_tools,
+    get_tool_info,
 )
 from template_mcp_server.src.tools.multiply_tool import (
     multiply_numbers,
@@ -59,8 +66,16 @@ class TemplateMCPServer:
         - multiply_numbers: Basic arithmetic operations
         - generate_code_review_prompt: Code review prompt generation
         - get_redhat_logo: Red Hat logo retrieval as base64
+        - query_backend_service: Query backend REST services with OAuth token
+        - get_available_tools: List available tools for capability discovery
+        - get_tool_info: Get detailed information about a specific tool
         """
         # Register all the imported tools
         self.mcp.tool()(multiply_numbers)
         self.mcp.tool()(generate_code_review_prompt)
         self.mcp.tool()(get_redhat_logo)
+        
+        # Register Slack bot integration tools
+        self.mcp.tool()(query_backend_service)
+        self.mcp.tool()(get_available_tools)
+        self.mcp.tool()(get_tool_info)

@@ -20,6 +20,7 @@ from template_mcp_server.src.oauth.handler import OAuth2Handler
 from template_mcp_server.src.oauth.routes import register_oauth_routes
 from template_mcp_server.src.oauth.service import OAuthService
 from template_mcp_server.src.settings import settings
+from template_mcp_server.src.slack_api import slack_router
 from template_mcp_server.utils.pylogger import get_python_logger
 
 logger = get_python_logger(settings.PYTHON_LOG_LEVEL)
@@ -44,10 +45,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Combined lifespan handler for MCP and storage initialization."""
     global oauth_service_instance
 
-    # Initialize storage service before starting
-    logger.info("Initializing storage service...")
+    # Initialize storage service only if needed for OAuth flows
+    # For Slack bot integration, storage is not required since Slack bot manages tokens
+    storage_initialized = False
+    
     try:
-        if settings.ENABLE_AUTH:
+        if settings.ENABLE_AUTH and hasattr(settings, 'POSTGRES_HOST') and settings.POSTGRES_HOST:
+            logger.info("Initializing storage service for OAuth flows...")
             from template_mcp_server.src.oauth.service import initialize_storage
 
             storage_service = await initialize_storage()
@@ -55,25 +59,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
             oauth_service_instance = OAuthService(storage_service)
             logger.info("OAuth service initialized with dependency injection")
+            storage_initialized = True
+        else:
+            logger.info("Storage service disabled - Slack bot will manage tokens")
     except Exception as e:
-        logger.critical(f"Failed to initialize storage service: {e}")
-        raise
+        logger.warning(f"Storage service initialization skipped: {e}")
+        logger.info("Continuing without storage - token validation will work via introspection")
 
     # Run MCP lifespan
     async with mcp_app.lifespan(app):
         logger.info("Server is ready to accept connections")
         yield
 
-    # Cleanup storage service
-    logger.info("Shutting down storage service...")
-    try:
-        from template_mcp_server.src.oauth.service import cleanup_storage
+    # Cleanup storage service if it was initialized
+    if storage_initialized:
+        logger.info("Shutting down storage service...")
+        try:
+            from template_mcp_server.src.oauth.service import cleanup_storage
 
-        await cleanup_storage()
-        oauth_service_instance = None
-        logger.info("Storage service shutdown complete")
-    except Exception as e:
-        logger.error(f"Error during storage cleanup: {e}")
+            await cleanup_storage()
+            oauth_service_instance = None
+            logger.info("Storage service shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during storage cleanup: {e}")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -104,7 +112,9 @@ class AuthorizationMiddleware(BaseHTTPMiddleware):
             "/health",
         }
 
-        if request.url.path in public_paths:
+        # For Slack bot integration: MCP paths are public
+        # Token validation happens inside the tools themselves
+        if request.url.path in public_paths or request.url.path.startswith("/mcp"):
             return await call_next(request)
 
         auth_header = request.headers.get("authorization")
@@ -244,6 +254,9 @@ def _get_session_secret() -> str:
     return ephemeral_key
 
 
+# Note: SessionMiddleware is used for OAuth flows through the browser
+# For Slack bot integration (stateless, token-per-request), sessions are not needed
+# The middleware will create empty sessions but FastMCP can handle missing session data
 app.add_middleware(
     SessionMiddleware,
     secret_key=_get_session_secret(),
@@ -368,6 +381,9 @@ def get_oauth_service_provider() -> OAuthService:
 
 
 register_oauth_routes(app, get_oauth_service_provider)
+
+# Register Slack bot integration API (stateless REST endpoints)
+app.include_router(slack_router)
 
 app.mount("/", mcp_app)
 
